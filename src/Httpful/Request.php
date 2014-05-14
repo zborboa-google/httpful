@@ -216,6 +216,8 @@ class Request
         $body = array_pop($response);
         $headers = array_pop($response);
 
+        curl_close($this->_ch);
+
         return new Response($body, $headers, $this);
     }
     public function sendIt()
@@ -380,9 +382,12 @@ class Request
 
     public function attach($files) {
         foreach ($files as $key => $file) {
-            $this->payload[$key] = "@{$file}";
+            if (function_exists('curl_file_create')) {
+                $this->payload[$key] = curl_file_create($file);
+            } else {
+                $this->payload[$key] = "@{$file}";
+            }
         }
-
         $this->sendsType(Mime::UPLOAD);
         return $this;
     }
@@ -620,7 +625,7 @@ class Request
      */
     public function serializePayloadWith(\Closure $callback)
     {
-        return $this->regregisterPayloadSerializer('*', $callback);
+        return $this->registerPayloadSerializer('*', $callback);
     }
 
     /**
@@ -771,6 +776,9 @@ class Request
         $ch = curl_init($this->uri);
 
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $this->method);
+        if ($this->method === Http::HEAD) {
+            curl_setopt($ch, CURLOPT_NOBODY, true);
+        }
 
         if ($this->hasBasicAuth()) {
             curl_setopt($ch, CURLOPT_USERPWD, $this->username . ':' . $this->password);
@@ -802,6 +810,11 @@ class Request
         }
 
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, $this->strict_ssl);
+        // zero is safe for all curl versions
+        $verifyValue = $this->strict_ssl + 0;
+        //Support for value 1 removed in cURL 7.28.1 value 2 valid in all versions
+        if ($verifyValue > 0) $verifyValue++;
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, $verifyValue);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 
         // https://github.com/nategood/httpful/issues/84
